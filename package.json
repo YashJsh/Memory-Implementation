@@ -10,6 +10,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@qdrant/js-client-rest": "^1.18.0",
     "openai": "^6.44.0"
   }
 }
