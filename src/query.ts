@@ -2,7 +2,8 @@ import type { Embedding } from "openai/resources";
 import { client } from ".";
 import { QdrantClient } from "@qdrant/js-client-rest";
 
-const quadrantClient = new QdrantClient({ host: "localhost", port: 6333 });
+const COLLECTION_NAME = "testing_user";
+const quadrantClient = new QdrantClient({ host: "localhost", port: 6333, checkCompatibility: false });
 
 export const refineQuery = async (query: string) => {
     const response = await client.responses.create({
@@ -30,27 +31,37 @@ export const makeEmbeddings = async (query: string) => {
 }
 
 export const getSimilarResultFromMemory = async (embedding: Embedding[]) => {
-    const result = await quadrantClient.search("testing_user", {
-        vector: embedding[0]?.embedding!,
-        limit: 5
-    })
-    return result;
+    try {
+        const result = await quadrantClient.search(COLLECTION_NAME, {
+            vector: embedding[0]?.embedding!,
+            limit: 5
+        });
+        return result.map(item => item.payload?.text).filter(Boolean).join("\n");
+    } catch (error: any) {
+        if (error.status === 404 || error.statusText === "Not Found" || String(error).includes("Not Found")) {
+            return "No previous memory found.";
+        }
+        throw error;
+    }
 }
 
-let messages: any = [];
-
 export const addInMemory = async (data: string) => {
-    messages.push({
-        role : "system",
-        content : "You are an expert AI agent, whose job is toh find relevant information from the query given by user. If you think the data is necessary for user. Then only use the tool-call for saving the data. You have only one tool. Which is add_to_memory. For example : query -> I live in banglore, So this data is important for the user. So you can save this information using the toolCall. For example : Query : Hello, how are you , These type of data don't need to be stored in memory. Any specific event, useful data, which can be usefull in future use needs to be preserved. Otherwise just do nothing and return simple string which says : `Not added`"
-    },{
-        role: "assistant",
-        content: data
-    });
+    console.log(`[Memory] Checking for memories to extract from: "${data}"`);
+    const localMessages: any[] = [
+        {
+            role: "system",
+            content: "You are an expert AI agent, whose job is to find relevant information from the query given by user. If you think the data is necessary for user, then only use the tool-call for saving the data. You have only one tool: add_to_memory. For example : query -> 'I live in banglore', so this data is important for the user. So you can save this information using the toolCall. For example : Query : 'Hello, how are you', these types of data don't need to be stored in memory. Any specific event, useful data, which can be useful in future use needs to be preserved. Otherwise just do nothing."
+        },
+        {
+            role: "user",
+            content: data
+        }
+    ];
+
     while (true) {
         const response = await client.chat.completions.create({
             model: "gpt-4.1-mini",
-            messages: messages,
+            messages: localMessages,
             tools: [
                 {
                     type: "function",
@@ -65,47 +76,56 @@ export const addInMemory = async (data: string) => {
                                     description: "The data we want to store in the memory",
                                 },
                             },
-                            required: ["sign"],
+                            required: ["data"],
                         },
                     },
                 }
             ]
         });
 
-        if (response.choices[0]?.finish_reason == "stop") {
-            messages = [];
-            return;
+        const choice = response.choices[0];
+        if (!choice) break;
+
+        const message = choice.message;
+        if (message) {
+            localMessages.push(message);
         }
 
-        if (response.choices[0]?.finish_reason == "tool_calls") {
-            //@ts-ignore
-            const args = response.choices[0]?.message.tool_calls?.[0]?.function.arguments;
-            //@ts-ignore
-            const tool_name = response.choices[0]?.message.tool_calls?.[0]?.function.name;
-            if (tool_name == "add_to_memory") {
-                const response = addToMemory(args.data);
-                messages.push({
-                    role: "toolCall",
-                    content: response
+        if (choice.finish_reason === "tool_calls") {
+            const toolCall = message.tool_calls?.[0];
+            if (toolCall && toolCall.function.name === "add_to_memory") {
+                const parsedArgs = JSON.parse(toolCall.function.arguments || "{}");
+                console.log(`[Memory] Tool add_to_memory triggered with: "${parsedArgs.data}"`);
+                const toolResponse = await addToMemory(parsedArgs.data);
+                localMessages.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    content: toolResponse
                 });
-            };
+            }
+        } else {
+            console.log(`[Memory] No tool calls triggered. Finish reason: "${choice.finish_reason}"`);
+            break;
         }
     }
 }
 
 const addToMemory = async (data: string) => {
+    if (!data) return "No data provided";
+    console.log(`[Memory] Saving to database: "${data}"`);
     const createEmbeddings = await makeEmbeddings(data);
     try {
-        await quadrantClient.getCollection("testing_user");
+        await quadrantClient.getCollection(COLLECTION_NAME);
     } catch (error) {
-        await quadrantClient.createCollection("testing_user", {
+        console.log(`[Memory] Creating collection: "${COLLECTION_NAME}"`);
+        await quadrantClient.createCollection(COLLECTION_NAME, {
             vectors: {
                 size: 1536,
                 distance: "Cosine"
             }
         });
     }
-    await quadrantClient.upsert("testing-user", {
+    await quadrantClient.upsert(COLLECTION_NAME, {
         wait: true,
         points: [
             {
@@ -118,5 +138,6 @@ const addToMemory = async (data: string) => {
             },
         ],
     });
-    return "Added in Memory"
+    console.log(`[Memory] Successfully saved to Qdrant: "${data}"`);
+    return "Added in Memory";
 }

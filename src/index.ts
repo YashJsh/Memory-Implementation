@@ -3,8 +3,6 @@ import { addInMemory, getSimilarResultFromMemory, makeEmbeddings, refineQuery } 
 
 export const client = new OpenAI();
 
-let messages = [];
-
 const main = async (query : string)=>{
     const refined = await refineQuery(query);
     const embeddings = await makeEmbeddings(refined);
@@ -13,18 +11,21 @@ const main = async (query : string)=>{
     You are a agent which answers users query. You have a memory where the details about the user is stored. Whenever you are asked something. You are give the data of the needed detail along with the prompt. So you can answer according to the memory you remember of the user. 
     Here is the memory which i found about the user for this query:
     ${similarResult}
-`
-    messages.push({
-        role : "system",
-        content : prompt
-    }, {
-        role : "user",
-        content : query
-    });
+`;
+    const messages = [
+        {
+            role : "system",
+            content : prompt
+        },
+        {
+            role : "user",
+            content : query
+        }
+    ];
 
     const ai_response = await ai(messages);
     console.log(ai_response);
-    await addInMemory(ai_response);
+    await addInMemory(query);
 }
 
 const ai = async (messages : any)=>{
@@ -35,7 +36,7 @@ const ai = async (messages : any)=>{
     return response.output_text;
 }
 
-main("hello");
+main("My name is Yash");
 
 //@ts-ignore
 //console.log(response.output[0].content[0].text);
