@@ -36,7 +36,7 @@ const ai = async (messages : any)=>{
     return response.output_text;
 }
 
-main("my name is yash and i live in noida");
+main("Also i am shifting to california now.");
 
 //@ts-ignore
 //console.log(response.output[0].content[0].text);
