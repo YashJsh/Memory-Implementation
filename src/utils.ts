@@ -50,7 +50,7 @@ export const addInMemory = async (data: string) => {
     const localMessages: any[] = [
         {
             role: "system",
-            content: "You are an expert AI agent, whose job is to find relevant information from the query given by user. If you think the data is necessary for user, then only use the tool-call for saving the data. You have only one tool: add_to_memory. For example : query -> 'I live in banglore', so this data is important for the user. So you can save this information using the toolCall. For example : Query : 'Hello, how are you', these types of data don't need to be stored in memory. Any specific event, useful data, which can be useful in future use needs to be preserved. Otherwise just do nothing."
+            content: "You are an expert AI agent, whose job is to find relevant information from the query given by user. If you think the data is necessary for user, then only use the tool-call for saving the data. You have only one tool: add_to_memory. For example : query -> 'I live in banglore', so this data is important for the user. So you can save this information using the toolCall and you need to save only like `User lives in banglore`. Example2 : Query -> I am yash and i like dosa. So for this you have to save `user name yash` and `yash likes dosa`. You have to multiple tool call in this case. For first to store user's name and then 'user likes dosa'. You have to store crisp information.  Example3 : Query : 'Hello, how are you', these types of data don't need to be stored in memory. Any specific event, useful data, which can be useful in future use needs to be preserved. Otherwise just do nothing."
         },
         {
             role: "user",
@@ -92,16 +92,16 @@ export const addInMemory = async (data: string) => {
         }
 
         if (choice.finish_reason === "tool_calls") {
-            const toolCall = message.tool_calls?.[0];
-            if (toolCall && toolCall.function.name === "add_to_memory") {
-                const parsedArgs = JSON.parse(toolCall.function.arguments || "{}");
-                console.log(`[Memory] Tool add_to_memory triggered with: "${parsedArgs.data}"`);
-                const toolResponse = await addToMemory(parsedArgs.data);
-                localMessages.push({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content: toolResponse
-                });
+            for (const toolCall of message.tool_calls ?? []) {
+                if (toolCall.function.name === "add_to_memory") {
+                    const args = JSON.parse(toolCall.function.arguments);
+                    const result = await addToMemory(args.data);
+                    localMessages.push({
+                        role: "tool",
+                        tool_call_id: toolCall.id,
+                        content: result,
+                    });
+                }
             }
         } else {
             console.log(`[Memory] No tool calls triggered. Finish reason: "${choice.finish_reason}"`);
@@ -139,5 +139,5 @@ const addToMemory = async (data: string) => {
         ],
     });
     console.log(`[Memory] Successfully saved to Qdrant: "${data}"`);
-    return "Added in Memory";
+    return `${data} added in memory`;
 }

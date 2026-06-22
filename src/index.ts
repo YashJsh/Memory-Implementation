@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { addInMemory, getSimilarResultFromMemory, makeEmbeddings, refineQuery } from "./query";
+import { addInMemory, getSimilarResultFromMemory, makeEmbeddings, refineQuery } from "./utils";
 
 export const client = new OpenAI();
 
@@ -36,7 +36,7 @@ const ai = async (messages : any)=>{
     return response.output_text;
 }
 
-main("My name is Yash");
+main("my name is yash and i live in noida");
 
 //@ts-ignore
 //console.log(response.output[0].content[0].text);
